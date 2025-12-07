@@ -20,6 +20,7 @@ class Material(Enum):
     PEARL_RED = "pearl-red"
     PEARL_GREY = "pearl-grey"
     CURVATURE = "curvature"
+    SEMANTIC = "semantic"
 
 
 class RenderContext:
@@ -55,7 +56,7 @@ class RenderContext:
 
         match extension:
             case '.ply': bpy.ops.wm.ply_import(filepath=str(self.mesh_path))
-            case '.obj': bpy.ops.wm.obj_import(filepath=str(self.mesh_path), forward_axis='-Z', up_axis='Y')
+            case '.obj': bpy.ops.wm.obj_import(filepath=str(self.mesh_path), forward_axis='NEGATIVE_Z', up_axis='Y')
             case _: return False
 
         self.current_mesh = bpy.context.view_layer.objects.active
@@ -162,19 +163,15 @@ class RenderContext:
 
 
 if __name__ == "__main__":
-    script_dir = Path(__file__).parent
-    mock_mesh_path = script_dir / "examples/gt_rescaled.ply"
-    blend_file = script_dir / "photo_studio.blend"
-    output_dir = script_dir / "outputs"
+    for file in Path("/home/mikolaj/Downloads/colored").iterdir():
+        script_dir = Path(__file__).parent
+        mock_mesh_path = file
+        blend_file = script_dir / "photo_studio.blend"
+        output_dir = script_dir / "outputs"
 
-    context = RenderContext(blend_file, output_dir)
-    context.import_mesh(mock_mesh_path, Material.PEARL_RED)
+        context = RenderContext(blend_file, output_dir)
+        context.import_mesh(mock_mesh_path, Material.SEMANTIC)
 
-    context.render(frame=0)
+        context.render(frame=45)
 
-    context.render_point_cloud(frame=1)
-
-    context.change_material(Material.PEARL_GREY)
-    context.render(frame=90)
-
-    context.remove_current_mesh()
+        context.remove_current_mesh()
