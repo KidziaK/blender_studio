@@ -82,9 +82,27 @@ class RenderContext:
             bpy.data.objects.remove(self.current_mesh, do_unlink=True)
             self.current_mesh = None
 
-    def render(self, frame: int = 0) -> bool:
+    def render(self, frame: int = 0, wireframe: bool = False) -> bool:
         output_filename = f"{self.mesh_stem}.png"
         output_path = self.output_dir / output_filename
+
+        wireframe_obj = None
+        if wireframe and self.current_mesh:
+            bpy.context.view_layer.objects.active = self.current_mesh
+            bpy.ops.object.select_all(action='DESELECT')
+            self.current_mesh.select_set(True)
+            bpy.ops.object.duplicate()
+            wireframe_obj = bpy.context.view_layer.objects.active
+            wireframe_obj.name = f"{self.current_mesh.name}_wireframe"
+            
+            wireframe_modifier = wireframe_obj.modifiers.new(name="Wireframe", type='WIREFRAME')
+            wireframe_modifier.thickness = 0.01
+            wireframe_modifier.use_replace = False
+            
+            wireframe_obj.parent = self.target_empty
+            wireframe_obj.location = (0, 0, 0)
+            wireframe_obj.rotation_euler = (0, 0, 0)
+            wireframe_obj.scale = (1, 1, 1)
 
         self.scene.camera = self.camera
         self.scene.render.filepath = str(output_path)
@@ -93,6 +111,9 @@ class RenderContext:
         self.scene.frame_set(frame)
 
         bpy.ops.render.render(write_still=True)
+
+        if wireframe_obj:
+            bpy.data.objects.remove(wireframe_obj, do_unlink=True)
 
         return True
 
