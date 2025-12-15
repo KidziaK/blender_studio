@@ -78,11 +78,12 @@ class RenderContext:
         return True
 
     def remove_current_mesh(self) -> None:
-        bpy.data.objects.remove(self.current_mesh, do_unlink=True)
-        self.current_mesh = None
+        if self.current_mesh:
+            bpy.data.objects.remove(self.current_mesh, do_unlink=True)
+            self.current_mesh = None
 
     def render(self, frame: int = 0) -> bool:
-        output_filename = f"{frame:03d}_{self.mesh_stem}_{self.current_material.value}.png"
+        output_filename = f"{self.mesh_stem}.png"
         output_path = self.output_dir / output_filename
 
         self.scene.camera = self.camera
@@ -161,17 +162,3 @@ class RenderContext:
         from_socket, to_socket = link_data
         links.new(from_socket, to_socket)
 
-
-if __name__ == "__main__":
-    for file in Path("/home/mikolaj/Downloads/colored").iterdir():
-        script_dir = Path(__file__).parent
-        mock_mesh_path = file
-        blend_file = script_dir / "photo_studio.blend"
-        output_dir = script_dir / "outputs"
-
-        context = RenderContext(blend_file, output_dir)
-        context.import_mesh(mock_mesh_path, Material.SEMANTIC)
-
-        context.render(frame=45)
-
-        context.remove_current_mesh()
