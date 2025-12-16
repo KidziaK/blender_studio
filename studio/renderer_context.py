@@ -109,7 +109,9 @@ class RenderContext:
             wireframe_obj.name = f"{self.current_mesh.name}_wireframe"
             
             wireframe_modifier = wireframe_obj.modifiers.new(name="Wireframe", type='WIREFRAME')
-            wireframe_modifier.thickness = 0.0002
+            wireframe_modifier.thickness = 0.01
+            wireframe_modifier.use_even_offset = False
+            wireframe_modifier.use_relative_offset = True
             wireframe_modifier.use_replace = True
             
             black_mat = bpy.data.materials.get(Material.BLACK.value)
