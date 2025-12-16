@@ -4,10 +4,10 @@ Utility tools for rendering single objects in a photo studio like environment.
 
 ## Installation
 
-Install the package:
+Install dependencies:
 
 ```bash
-uv pip install -e .
+uv sync
 ```
 
 ## Usage
