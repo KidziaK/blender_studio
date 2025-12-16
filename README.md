@@ -2,6 +2,14 @@
 
 Utility tools for rendering single objects in a photo studio like environment.
 
+## Installation
+
+Install the package:
+
+```bash
+uv pip install -e .
+```
+
 ## Usage
 
 Create script in `/run` that use `RenderContext` from `studio.renderer_context`:
