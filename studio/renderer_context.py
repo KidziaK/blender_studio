@@ -21,7 +21,6 @@ class Material(Enum):
     PEARL_GREY = "pearl-grey"
     CURVATURE = "curvature"
     SEMANTIC = "semantic"
-    BLACK = "black"
 
 
 class RenderContext:
@@ -83,68 +82,10 @@ class RenderContext:
             bpy.data.objects.remove(self.current_mesh, do_unlink=True)
             self.current_mesh = None
 
-    def set_focal_length(self, focal_length: float) -> bool:
-        if not self.camera or not self.camera.data:
-            return False
-        self.camera.data.lens = focal_length
-        return True
-
-    def render(self, output_dir: Optional[Path] = None, frame: int = 0, wireframe: bool = False, focal_length: Optional[float] = None) -> bool:
-        if output_dir is None:
-            output_dir = self.output_dir
-        else:
-            output_dir = Path(output_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-        
+    def render(self, frame: int = 0) -> bool:
         output_filename = f"{self.mesh_stem}.png"
-        output_path = output_dir / output_filename
+        output_path = self.output_dir / output_filename
 
-        wireframe_obj = None
-        if wireframe and self.current_mesh:
-            bpy.context.view_layer.objects.active = self.current_mesh
-            bpy.ops.object.select_all(action='DESELECT')
-            self.current_mesh.select_set(True)
-            bpy.ops.object.duplicate()
-            wireframe_obj = bpy.context.view_layer.objects.active
-            wireframe_obj.name = f"{self.current_mesh.name}_wireframe"
-            
-            wireframe_modifier = wireframe_obj.modifiers.new(name="Wireframe", type='WIREFRAME')
-            wireframe_modifier.thickness = 0.01
-            wireframe_modifier.use_even_offset = False
-            wireframe_modifier.use_relative_offset = True
-            wireframe_modifier.use_replace = True
-            
-            black_mat = bpy.data.materials.get(Material.BLACK.value)
-            if black_mat:
-                wireframe_mat = black_mat.copy()
-                wireframe_mat.name = "wireframe_black"
-            else:
-                wireframe_mat = bpy.data.materials.new(name="wireframe_black")
-                wireframe_mat.use_nodes = True
-                
-                nodes = wireframe_mat.node_tree.nodes
-                links = wireframe_mat.node_tree.links
-                
-                for node in nodes:
-                    nodes.remove(node)
-                
-                bsdf = nodes.new(type='ShaderNodeBsdfPrincipled')
-                output = nodes.new(type='ShaderNodeOutputMaterial')
-                links.new(bsdf.outputs['BSDF'], output.inputs['Surface'])
-                bsdf.inputs['Base Color'].default_value = (0.0, 0.0, 0.0, 1.0)
-            
-            wireframe_obj.data.materials.clear()
-            wireframe_obj.data.materials.append(wireframe_mat)
-            
-            wireframe_obj.parent = self.current_mesh.parent
-            wireframe_obj.parent_type = self.current_mesh.parent_type
-            wireframe_obj.location = (0, 0, 0)
-            wireframe_obj.rotation_euler = (0, 0, 0)
-            wireframe_obj.scale = (1, 1, 1)
-
-        if focal_length is not None:
-            self.set_focal_length(focal_length)
-        
         self.scene.camera = self.camera
         self.scene.render.filepath = str(output_path)
         self.scene.render.image_settings.file_format = 'PNG'
@@ -152,12 +93,6 @@ class RenderContext:
         self.scene.frame_set(frame)
 
         bpy.ops.render.render(write_still=True)
-
-        if wireframe_obj:
-            wireframe_mat = wireframe_obj.data.materials[0] if wireframe_obj.data.materials else None
-            bpy.data.objects.remove(wireframe_obj, do_unlink=True)
-            if wireframe_mat and wireframe_mat.name == "wireframe_black":
-                bpy.data.materials.remove(wireframe_mat)
 
         return True
 
