@@ -37,19 +37,62 @@ def get_all_part_ids(base_dir: Path) -> set[str]:
     for method_dir in ["ours", "partfield"]:
         method_path = base_dir / method_dir
         if not method_path.exists():
+            print(f"Warning: Directory {method_path} does not exist")
             continue
         
         for tesselation_dir in method_path.iterdir():
-            if not tesselation_dir.is_dir():
+            if not tesselation_dir.is_dir() or tesselation_dir.name.startswith('.'):
                 continue
             
+            png_count = 0
             for img_file in tesselation_dir.iterdir():
                 if img_file.is_file() and img_file.suffix == ".png":
+                    png_count += 1
                     # Extract part ID (first part before underscore)
                     part_id = img_file.name.split("_")[0]
                     part_ids.add(part_id)
+            
+            if png_count == 0:
+                print(f"Warning: No PNG files found in {tesselation_dir}")
     
     return part_ids
+
+
+def blur_edges(img: Image.Image, blur_size: int = 20) -> Image.Image:
+    """Blur the edges of an image by applying a gradient alpha mask."""
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    
+    width, height = img.size
+    img_array = img.load()
+    
+    # Create a new image with the same size
+    result = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    result_array = result.load()
+    
+    for y in range(height):
+        for x in range(width):
+            # Calculate distance from edges
+            dist_left = x
+            dist_right = width - 1 - x
+            dist_top = y
+            dist_bottom = height - 1 - y
+            
+            # Find minimum distance to any edge
+            min_dist = min(dist_left, dist_right, dist_top, dist_bottom)
+            
+            # Calculate alpha based on distance from edge
+            if min_dist < blur_size:
+                # Smooth fade-out using a quadratic curve
+                alpha_factor = (min_dist / blur_size) ** 2
+                r, g, b, a = img_array[x, y]
+                new_alpha = int(a * alpha_factor)
+                result_array[x, y] = (r, g, b, new_alpha)
+            else:
+                # Keep original pixel
+                result_array[x, y] = img_array[x, y]
+    
+    return result
 
 
 def add_soft_shadow(img: Image.Image, shadow_size: int = 15, shadow_opacity: int = 20) -> Image.Image:
@@ -126,23 +169,28 @@ def compose_comparison(part_id: str, base_dir: Path, output_base_dir: Path) -> b
     # Get dimensions (assume all images have the same size)
     img_width, img_height = images["partfield_T0"].size
     
-    # Add soft shadows to images for smooth blending
-    shadow_size = 15
-    shadow_padding = shadow_size
-    images_with_shadow = {}
+    # Apply edge blurring to images with greater blur
+    images_to_use = {}
     for key, img in images.items():
-        images_with_shadow[key] = add_soft_shadow(img, shadow_size=shadow_size, shadow_opacity=25)
+        images_to_use[key] = blur_edges(img, blur_size=150)
     
-    # Calculate spacing and dimensions
-    cell_padding = 30  # Padding between cells
-    label_height = 60  # Height for row labels
-    label_width = 120  # Width for column labels
+    # Calculate spacing and dimensions with 15% overlap
+    label_width = 100  # Width for row labels on the left (increased for larger fonts)
+    label_overlay = 20  # How much labels can overlay image borders
+    left_padding = 20  # Extra padding from left edge
     
-    # Calculate composite dimensions
-    cell_width = img_width + shadow_padding * 2
-    cell_height = img_height + shadow_padding * 2
-    composite_width = label_width + cell_width * 3 + cell_padding * 2
-    composite_height = label_height + cell_height * 2 + cell_padding * 1
+    # Calculate overlap amounts (15% of image dimensions)
+    horizontal_overlap = int(img_width * 0.15)
+    vertical_overlap = int(img_height * 0.15)
+    
+    # Calculate composite dimensions accounting for overlaps
+    # For 3 columns: first image full width, next 2 overlap by 15% each
+    total_width = img_width + (img_width - horizontal_overlap) * 2
+    # For 2 rows: first image full height, second overlaps by 15%
+    total_height = img_height + (img_height - vertical_overlap)
+    
+    composite_width = left_padding + label_width + total_width
+    composite_height = total_height
     
     # Create the composite image with white background
     composite = Image.new("RGBA", (composite_width, composite_height), color=(255, 255, 255, 255))
@@ -151,14 +199,14 @@ def compose_comparison(part_id: str, base_dir: Path, output_base_dir: Path) -> b
     # Try to load a nice font, fallback to default if not available
     try:
         # Try to use a system font
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 28)
-        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 16)
+        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 64)
+        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 36)
     except:
         try:
-            font_large = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 28)
-            font_medium = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
-            font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 16)
+            font_large = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 64)
+            font_medium = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 48)
+            font_small = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 36)
         except:
             # Fallback to default font
             font_large = ImageFont.load_default()
@@ -172,33 +220,10 @@ def compose_comparison(part_id: str, base_dir: Path, output_base_dir: Path) -> b
         ("T2", "coarser"),
     ]
     
-    base_x = label_width
-    base_y = 0
+    base_x = left_padding + label_width
     
-    for col_idx, (label, desc) in enumerate(column_labels):
-        x = base_x + col_idx * (cell_width + cell_padding) + cell_width // 2
-        y = label_height // 2
-        
-        # Draw main label (T0, T1, T2)
-        bbox = draw.textbbox((0, 0), label, font=font_large)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        draw.text(
-            (x - text_width // 2, y - text_height - 5),
-            label,
-            fill=(0, 0, 0, 255),
-            font=font_large,
-        )
-        
-        # Draw description
-        bbox = draw.textbbox((0, 0), desc, font=font_small)
-        text_width = bbox[2] - bbox[0]
-        draw.text(
-            (x - text_width // 2, y + 5),
-            desc,
-            fill=(100, 100, 100, 255),
-            font=font_small,
-        )
+    # Draw column labels directly on top of images (after images are pasted)
+    # We'll do this after pasting images
     
     # Row labels and arrange images in grid
     row_labels = ["partfield", "ours"]
@@ -208,24 +233,69 @@ def compose_comparison(part_id: str, base_dir: Path, output_base_dir: Path) -> b
     ]
     
     for row_idx, (row_label, row_keys) in enumerate(zip(row_labels, layout)):
-        # Draw row label
-        y = label_height + row_idx * (cell_height + cell_padding) + cell_height // 2
+        # Paste images with overlaps
+        for col_idx, key in enumerate(row_keys):
+            # Horizontal positioning: each image overlaps previous by 15%
+            if col_idx == 0:
+                x = base_x
+            else:
+                x = base_x + col_idx * (img_width - horizontal_overlap)
+            
+            # Vertical positioning: second row overlaps first by 15%
+            if row_idx == 0:
+                y = 0
+            else:
+                y = img_height - vertical_overlap
+            
+            # Paste with alpha channel preserved
+            composite.paste(images_to_use[key], (x, y), images_to_use[key])
+        
+        # Draw row label - overlay on left border of images
+        if row_idx == 0:
+            y = img_height // 2
+        else:
+            y = img_height - vertical_overlap + (img_height - vertical_overlap) // 2
+        
         bbox = draw.textbbox((0, 0), row_label, font=font_medium)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         draw.text(
-            (label_width // 2 - text_width // 2, y - text_height // 2),
+            (left_padding + label_width - label_overlay - text_width // 2, y - text_height // 2),
             row_label,
             fill=(0, 0, 0, 255),
             font=font_medium,
         )
+    
+    # Draw column labels directly on top of images
+    for col_idx, (label, desc) in enumerate(column_labels):
+        # Calculate x position accounting for overlaps
+        if col_idx == 0:
+            x = base_x + img_width // 2
+        else:
+            x = base_x + col_idx * (img_width - horizontal_overlap) + img_width // 2
         
-        # Paste images with shadows
-        for col_idx, key in enumerate(row_keys):
-            x = base_x + col_idx * (cell_width + cell_padding)
-            y = label_height + row_idx * (cell_height + cell_padding)
-            # Paste with alpha channel preserved for smooth blending
-            composite.paste(images_with_shadow[key], (x, y), images_with_shadow[key])
+        y = label_overlay  # Position at top of images with small offset
+        
+        # Draw main label (T0, T1, T2) - overlay on top of images
+        bbox = draw.textbbox((0, 0), label, font=font_large)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        draw.text(
+            (x - text_width // 2, y),
+            label,
+            fill=(0, 0, 0, 255),
+            font=font_large,
+        )
+        
+        # Draw description - just below main label
+        bbox = draw.textbbox((0, 0), desc, font=font_small)
+        text_width = bbox[2] - bbox[0]
+        draw.text(
+            (x - text_width // 2, y + text_height + 5),
+            desc,
+            fill=(100, 100, 100, 255),
+            font=font_small,
+        )
     
     # Convert back to RGB for saving (alpha will be composited onto white)
     composite = composite.convert("RGB")
@@ -252,29 +322,44 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=str,
-        default="/home/kidziak/Documents/github/blender_studio/data/rendered",
-        help="Input directory containing rendered images"
+        default=None,
+        help="Input directory containing rendered images (default: project_root/data/rendered)"
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="/home/kidziak/Documents/github/blender_studio/outputs/tesselation",
-        help="Output directory for composite images"
+        default=None,
+        help="Output directory for composite images (default: project_root/outputs/tesselation)"
     )
     
     args = parser.parse_args()
     
-    base_dir = Path(args.input_dir)
-    output_base_dir = Path(args.output_dir)
+    script_dir = Path(__file__).parent.parent
+    if args.input_dir:
+        base_dir = Path(args.input_dir)
+    else:
+        base_dir = script_dir / "data" / "rendered"
+    
+    if args.output_dir:
+        output_base_dir = Path(args.output_dir)
+    else:
+        output_base_dir = script_dir / "outputs" / "tesselation"
+    
+    if not base_dir.exists():
+        print(f"Error: Input directory does not exist: {base_dir}")
+        return
     
     if args.part_id:
         # Process single part
         part_ids = [args.part_id]
     else:
         # Get all part IDs
-        print("Collecting all part IDs...")
+        print(f"Collecting all part IDs from {base_dir}...")
         part_ids = sorted(get_all_part_ids(base_dir))
         print(f"Found {len(part_ids)} unique part IDs")
+        if len(part_ids) == 0:
+            print(f"Warning: No part IDs found. Check that {base_dir} contains 'ours' and 'partfield' subdirectories with images.")
+            return
     
     # Process each part
     successful = 0
